@@ -64,7 +64,8 @@ construct_regex = {
     'STRING' : r'^\"[^\"]*\"',                          # yarn
     'BOOL': r'^WIN|FAIL',                             # troof
     'TYPE' : r'^TROOF|NOOB|NUMBR|NUMBAR|YARN|TYPE',
-
+    'COMMENTSTRING': r"(?<=BTW\s)(.*)",
+    'MULTICOMMENTSTRING': r"(?<=OBTW\s)(.*)",
     # Identifier 
     'IDENTIFIER' : r'^[a-zA-Z][a-zA-Z_0-9]*',
 }
@@ -72,7 +73,23 @@ construct_regex = {
 def create_tokens():
     tokens = []
     with open("code.lol", "r") as f:
+        in_multiline_comment = False
+        multiline_comment_content = []
         for line in f:
+            if in_multiline_comment:
+                #case for multi comments ,, check first for the terminating keyword in multi line comments (the string before that is considered as part of the comment)
+                if re.match (construct_regex['MULTI_COMMENT_DELIM_CL'], line.strip()):
+                    # end of multi line comment
+                    in_multiline_comment = False
+                    # append the comment content to byline
+                    byline.append(['\n'.join(multiline_comment_content).strip(), 'MULTILINE_COMMENT'])
+                    byline.append(['TLDR', 'MULTI_COMMENT_END'])
+                    multiline_comment_content = []
+                    continue
+                else:
+                    # add the line to the comment content
+                    multiline_comment_content.append(line.strip())
+                    continue
             byline = []
             line = line.strip()  # remove whitespaces
             while line:
@@ -82,7 +99,20 @@ def create_tokens():
                         token_value = match.group()
                         if pattern_name == 'COMMENT_IDENTIFIER':  # single-line comments
                             byline.append([token_value, 'COMMENT'])
-                            line = ""  # skip
+                            comment_match = re.search(construct_regex['COMMENTSTRING'], line)
+                            if comment_match:
+                                comment_content = comment_match.group().strip()
+                                byline.append([comment_content, 'COMMENTSTRING'])
+                            line = ""  
+                            break
+                        elif pattern_name == 'MULTI_COMMENT_DELIM_OP':  # start of multi-line comment
+                            in_multiline_comment = True
+                            # capture string beside obtw as well
+                            comment_content = line[len(token_value):].strip()
+                            if comment_content:
+                                multiline_comment_content.append(comment_content)
+                            byline.append([token_value, 'MULTI_COMMENT_START'])
+                            line = ''  # skip the rest of the line after OBTW
                             break
                         elif pattern_name == 'SPACE':  # skip whitespace
                             line = line[len(token_value):]
